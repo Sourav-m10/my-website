@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP32 DHT11 Live Dashboard</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      text-align: center;
+      background: #f5f7fa;
+      margin: 0;
+      padding: 40px;
+    }
+    h1 {
+      margin-bottom: 40px;
+      color: #333;
+    }
+    .container {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+    }
+    .card {
+      background: #fff;
+      padding: 30px;
+      border-radius: 15px;
+      width: 200px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+    }
+    h2 {
+      margin-bottom: 15px;
+      font-size: 20px;
+      color: #555;
+    }
+    .value {
+      font-size: 36px;
+      font-weight: bold;
+    }
+    .temp {
+      color: #e74c3c;
+    }
+    .hum {
+      color: #3498db;
+    }
+  </style>
+</head>
+<body>
+  <h1>🌡️ ESP32 DHT11 Live Dashboard</h1>
+
+  <div class="container">
+    <div class="card">
+      <h2>Temperature</h2>
+      <p id="temperature" class="value temp">-- °C</p>
+    </div>
+
+    <div class="card">
+      <h2>Humidity</h2>
+      <p id="humidity" class="value hum">-- %</p>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    // Import Firebase functions
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    // Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0bp-0DOhN5RPQks-K_wykCYKOJao18VM",
+      authDomain: "dht-11-971bc.firebaseapp.com",
+      databaseURL: "https://dht-11-971bc-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "dht-11-971bc",
+      storageBucket: "dht-11-971bc.firebasestorage.app",
+      messagingSenderId: "49008720197",
+      appId: "1:49008720197:web:c25a4a08e715547045e62c"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // Live Temperature listener
+    const tempRef = ref(db, 'DHT_11/Temperature');
+    onValue(tempRef, (snapshot) => {
+      const temp = snapshot.val();
+      document.getElementById("temperature").innerText = temp !== null ? temp + " °C" : "-- °C";
+    });
+
+    // Live Humidity listener
+    const humRef = ref(db, 'DHT_11/Humidity');
+    onValue(humRef, (snapshot) => {
+      const hum = snapshot.val();
+      document.getElementById("humidity").innerText = hum !== null ? hum + " %" : "-- %";
+    });
+  </script>
+</body>
+</html>
