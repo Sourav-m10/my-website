@@ -1,101 +1,231 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>ESP32 DHT11 Live Dashboard1</title>
+  <meta charset="utf-8" />
+  <title>Medicine History Log</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      text-align: center;
-      background: #f5f7fa;
-      margin: 0;
-      padding: 40px;
+    body { font-family: Arial, sans-serif; margin: 18px; }
+    h2 { color: #0b63b3; margin-bottom: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px; }
+    th { background: #f7f7f7; font-weight: 600; }
+    .taken { color: #108a00; font-weight: 700; }
+    .not-taken { color: #c20b00; font-weight: 700; }
+    .triggered { color: #b36b00; font-weight: 700; }
+    .sos { color: #9b1b1b; font-weight: 700; }
+    .row-latest { background: #fff8d6; }
+    #status { margin-top: 10px; color: #666; font-size: 13px; }
+    #debug { margin-top: 6px; color: #333; font-size: 13px; }
+    #clearBtn {
+      margin-top: 12px;
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      background: #d9534f;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
     }
-    h1 {
-      margin-bottom: 40px;
-      color: #333;
-    }
-    .container {
-      display: flex;
-      justify-content: center;
-      gap: 30px;
-    }
-    .card {
-      background: #fff;
-      padding: 30px;
-      border-radius: 15px;
-      width: 200px;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-      transition: transform 0.2s;
-    }
-    .card:hover {
-      transform: translateY(-5px);
-    }
-    h2 {
-      margin-bottom: 15px;
-      font-size: 20px;
-      color: #555;
-    }
-    .value {
-      font-size: 36px;
-      font-weight: bold;
-    }
-    .temp {
-      color: #e74c3c;
-    }
-    .hum {
-      color: #3498db;
-    }
+    #clearBtn:hover { background: #c9302c; }
+    @media (max-width:600px){ th, td{ font-size:13px; padding:6px; } }
   </style>
 </head>
 <body>
-  <h1>🌡️ ESP32 DHT11 Live Dashboard1</h1>
+  <h2>AUTOMATED MEDICINE DISPENSER</h2>
+  <div id="status">Connecting to Firebase...</div>
+  <div id="debug" aria-hidden="true"></div>
 
-  <div class="container">
-    <div class="card">
-      <h2>Temperature</h2>
-      <p id="temperature" class="value temp">-- °C</p>
-    </div>
+  <!-- ✅ Clear Button -->
+  <button id="clearBtn" onclick="clearAllData()">✨ Clear All Data</button>
 
-    <div class="card">
-      <h2>Humidity</h2>
-      <p id="humidity" class="value hum">-- %</p>
-    </div>
-  </div>
+  <table aria-labelledby="AUTOMATED MEDICINE DISPENSER">
+    <thead>
+      <tr>
+        <th style="width:40%;">Time</th>
+        <th style="width:60%;">Event</th>
+      </tr>
+    </thead>
+    <tbody id="log"></tbody>
+  </table>
 
-  <!-- Firebase SDK -->
   <script type="module">
-    // Import Firebase functions
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    // Firebase modular SDK imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getDatabase,
+      ref,
+      get,
+      onChildAdded,
+      onChildChanged,
+      onValue,
+      remove
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    // Your Firebase config
+    // === Your Firebase config ===
     const firebaseConfig = {
-      apiKey: "AIzaSyB0bp-0DOhN5RPQks-K_wykCYKOJao18VM",
-      authDomain: "dht-11-971bc.firebaseapp.com",
-      databaseURL: "https://dht-11-971bc-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "dht-11-971bc",
-      storageBucket: "dht-11-971bc.firebasestorage.app",
-      messagingSenderId: "49008720197",
-      appId: "1:49008720197:web:c25a4a08e715547045e62c"
+      apiKey: "AIzaSyDiABZJHcg074VU2Q1hP8KJTjd2Ep59t8k",
+      authDomain: "automated-medicine-dispe-2e57a.firebaseapp.com",
+      databaseURL: "https://automated-medicine-dispe-2e57a-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "automated-medicine-dispe-2e57a",
+      storageBucket: "automated-medicine-dispe-2e57a.appspot.com",
+      messagingSenderId: "32551192089",
+      appId: "1:32551192089:web:622896cde5b35bca4f8c88"
     };
 
-    // Initialize Firebase
+    // Initialize
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Live Temperature listener
-    const tempRef = ref(db, 'DHT_11/Temperature');
-    onValue(tempRef, (snapshot) => {
-      const temp = snapshot.val();
-      document.getElementById("temperature").innerText = temp !== null ? temp + " °C" : "-- °C";
+    // Path to events
+    const eventsRefPath = "devices/dispense01/events";
+    const eventsRef = ref(db, eventsRefPath);
+
+    const statusDiv = document.getElementById("status");
+    const debugDiv = document.getElementById("debug");
+    const logTable = document.getElementById("log");
+
+    // ✅ Clear All Data function
+    window.clearAllData = function() {
+      if (confirm("⚠️ Are you sure you want to delete ALL event logs?")) {
+        remove(eventsRef)
+          .then(() => {
+            logTable.innerHTML = "";
+            statusDiv.textContent = "All events cleared.";
+            debugDiv.textContent = "Logs wiped from Firebase.";
+            console.log("All data removed from", eventsRefPath);
+          })
+          .catch((err) => {
+            alert("❌ Failed to clear data: " + err.message);
+            console.error("Remove error:", err);
+          });
+      }
+    };
+
+    // Map to avoid duplicates
+    const rows = new Map();
+
+    // Format timestamp
+    function formatTimestamp(tsSeconds) {
+      if (tsSeconds === undefined || tsSeconds === null) return "No time";
+      let seconds = tsSeconds;
+      if (seconds > 1e12) seconds = Math.floor(seconds / 1000); 
+      try {
+        const d = new Date(seconds * 1000);
+        return d.toLocaleString("en-IN", { hour12: true });
+      } catch (e) {
+        return "Invalid time";
+      }
+    }
+
+    function pushKeyToTimestamp(pushKey) {
+      try {
+        const sub = pushKey.substring(0, 8);
+        const n = parseInt(sub, 36);
+        if (!isNaN(n) && n > 0) return n;
+      } catch (e) {}
+      return null;
+    }
+
+    function createRowElement(key, value, isLatest = false) {
+      const tr = document.createElement("tr");
+      tr.id = `row-${key}`;
+
+      const timeTd = document.createElement("td");
+      timeTd.style.whiteSpace = "nowrap";
+      let ts = (value && value.timestamp) ? value.timestamp : null;
+      if (!ts) {
+        const fallback = pushKeyToTimestamp(key);
+        if (fallback) ts = fallback;
+      }
+      timeTd.textContent = formatTimestamp(ts);
+      tr.appendChild(timeTd);
+
+      const ev = (value && value.event) ? value.event : "UNKNOWN";
+      const eventTd = document.createElement("td");
+      eventTd.textContent = ev;
+
+      if (ev === "TAKEN") eventTd.classList.add("taken");
+      else if (ev === "NOT_TAKEN") eventTd.classList.add("not-taken");
+      else if (ev === "DOSE_TRIGGERED") eventTd.classList.add("triggered");
+      else if (ev === "SOS") eventTd.classList.add("sos");
+
+      tr.appendChild(eventTd);
+
+      if (isLatest) tr.classList.add("row-latest");
+
+      return tr;
+    }
+
+    function addChild(key, value) {
+      if (rows.has(key)) return;
+      const prevLatest = document.querySelector(".row-latest");
+      if (prevLatest) prevLatest.classList.remove("row-latest");
+      const newRow = createRowElement(key, value, true);
+      logTable.appendChild(newRow);
+      rows.set(key, newRow);
+      statusDiv.textContent = `Connected — last event: ${value.event || "?"}`;
+      debugDiv.textContent = `Added ${key}`;
+    }
+
+    function updateChild(key, value) {
+      if (rows.has(key)) {
+        const existing = rows.get(key);
+        const newRow = createRowElement(key, value, true);
+        existing.replaceWith(newRow);
+        rows.set(key, newRow);
+        const prevLatest = document.querySelector(".row-latest");
+        if (prevLatest) prevLatest.classList.remove("row-latest");
+        newRow.classList.add("row-latest");
+        statusDiv.textContent = `Updated event: ${value.event || "?"}`;
+      } else {
+        addChild(key, value);
+      }
+    }
+
+    // Initial one-time load
+    get(eventsRef)
+      .then(snapshot => {
+        if (!snapshot.exists()) {
+          statusDiv.textContent = "Connected — no events yet.";
+          return;
+        }
+        snapshot.forEach(childSnap => {
+          addChild(childSnap.key, childSnap.val());
+        });
+        statusDiv.textContent = `Loaded ${rows.size} event(s). Listening...`;
+      })
+      .catch(err => {
+        statusDiv.textContent = `Initial read failed: ${err.message}`;
+        console.error("Initial read error:", err);
+      });
+
+    onChildAdded(eventsRef, (snap) => {
+      const k = snap.key;
+      const v = snap.val();
+      if (rows.has(k)) {
+        updateChild(k, v);
+        return;
+      }
+      addChild(k, v);
     });
 
-    // Live Humidity listener
-    const humRef = ref(db, 'DHT_11/Humidity');
-    onValue(humRef, (snapshot) => {
-      const hum = snapshot.val();
-      document.getElementById("humidity").innerText = hum !== null ? hum + " %" : "-- %";
+    onChildChanged(eventsRef, (snap) => {
+      updateChild(snap.key, snap.val());
     });
+
+    try {
+      const connectedRef = ref(db, ".info/connected");
+      onValue(connectedRef, (snap) => {
+        if (snap.exists() && snap.val() === true) {
+          debugDiv.textContent = "Realtime DB: connected";
+        } else {
+          debugDiv.textContent = "Realtime DB: disconnected";
+        }
+      });
+    } catch (e) {
+      console.warn("'.info/connected' watch failed:", e);
+    }
   </script>
 </body>
 </html>
