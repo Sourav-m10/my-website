@@ -10,10 +10,14 @@
     table { border-collapse: collapse; width: 100%; margin-top: 12px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 14px; }
     th { background: #f7f7f7; font-weight: 600; }
+
+    /* ✅ Event colors */
     .taken { color: #108a00; font-weight: 700; }
     .not-taken { color: #c20b00; font-weight: 700; }
     .triggered { color: #b36b00; font-weight: 700; }
     .sos { color: #9b1b1b; font-weight: 700; }
+    .ok { color: #108a00; font-weight: 700; } /* ✅ Bright green for I AM OK */
+
     .row-latest { background: #fff8d6; }
     #status { margin-top: 10px; color: #666; font-size: 13px; }
     #debug { margin-top: 6px; color: #333; font-size: 13px; }
@@ -36,7 +40,6 @@
   <div id="status">Connecting to Firebase...</div>
   <div id="debug" aria-hidden="true"></div>
 
-  <!-- ✅ Clear Button -->
   <button id="clearBtn" onclick="clearAllData()">✨ Clear All Data</button>
 
   <table aria-labelledby="AUTOMATED MEDICINE DISPENSER">
@@ -50,19 +53,10 @@
   </table>
 
   <script type="module">
-    // Firebase modular SDK imports
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import {
-      getDatabase,
-      ref,
-      get,
-      onChildAdded,
-      onChildChanged,
-      onValue,
-      remove
-    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, get, onChildAdded, onChildChanged, onValue, remove } 
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-    // === Your Firebase config ===
     const firebaseConfig = {
       apiKey: "AIzaSyDiABZJHcg074VU2Q1hP8KJTjd2Ep59t8k",
       authDomain: "automated-medicine-dispe-2e57a.firebaseapp.com",
@@ -73,58 +67,36 @@
       appId: "1:32551192089:web:622896cde5b35bca4f8c88"
     };
 
-    // Initialize
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
-
-    // Path to events
-    const eventsRefPath = "devices/dispense01/events";
-    const eventsRef = ref(db, eventsRefPath);
+    const eventsRef = ref(db, "devices/dispense01/events");
 
     const statusDiv = document.getElementById("status");
     const debugDiv = document.getElementById("debug");
     const logTable = document.getElementById("log");
 
-    // ✅ Clear All Data function
     window.clearAllData = function() {
       if (confirm("⚠️ Are you sure you want to delete ALL event logs?")) {
         remove(eventsRef)
           .then(() => {
             logTable.innerHTML = "";
             statusDiv.textContent = "All events cleared.";
-            debugDiv.textContent = "Logs wiped from Firebase.";
-            console.log("All data removed from", eventsRefPath);
           })
-          .catch((err) => {
-            alert("❌ Failed to clear data: " + err.message);
-            console.error("Remove error:", err);
-          });
+          .catch((err) => alert("❌ Failed: " + err.message));
       }
     };
 
-    // Map to avoid duplicates
     const rows = new Map();
 
-    // Format timestamp
     function formatTimestamp(tsSeconds) {
-      if (tsSeconds === undefined || tsSeconds === null) return "No time";
-      let seconds = tsSeconds;
-      if (seconds > 1e12) seconds = Math.floor(seconds / 1000); 
-      try {
-        const d = new Date(seconds * 1000);
-        return d.toLocaleString("en-IN", { hour12: true });
-      } catch (e) {
-        return "Invalid time";
-      }
+      if (!tsSeconds) return "No time";
+      let seconds = tsSeconds > 1e12 ? tsSeconds / 1000 : tsSeconds;
+      return new Date(seconds * 1000).toLocaleString("en-IN", { hour12: true });
     }
 
-    function pushKeyToTimestamp(pushKey) {
-      try {
-        const sub = pushKey.substring(0, 8);
-        const n = parseInt(sub, 36);
-        if (!isNaN(n) && n > 0) return n;
-      } catch (e) {}
-      return null;
+    function cleanEventName(ev) {
+      // ✅ Converts "I_AM_OK" → "I AM OK"
+      return ev.replace(/_/g, " ");
     }
 
     function createRowElement(key, value, isLatest = false) {
@@ -132,103 +104,51 @@
       tr.id = `row-${key}`;
 
       const timeTd = document.createElement("td");
-      timeTd.style.whiteSpace = "nowrap";
-      let ts = (value && value.timestamp) ? value.timestamp : null;
-      if (!ts) {
-        const fallback = pushKeyToTimestamp(key);
-        if (fallback) ts = fallback;
-      }
-      timeTd.textContent = formatTimestamp(ts);
-      tr.appendChild(timeTd);
-
-      const ev = (value && value.event) ? value.event : "UNKNOWN";
       const eventTd = document.createElement("td");
-      eventTd.textContent = ev;
 
+      timeTd.textContent = formatTimestamp(value.timestamp || null);
+
+      const ev = value.event || "UNKNOWN";
+      eventTd.textContent = cleanEventName(ev);
+
+      // ✅ Apply color styles
       if (ev === "TAKEN") eventTd.classList.add("taken");
       else if (ev === "NOT_TAKEN") eventTd.classList.add("not-taken");
       else if (ev === "DOSE_TRIGGERED") eventTd.classList.add("triggered");
       else if (ev === "SOS") eventTd.classList.add("sos");
+      else if (ev === "I_AM_OK") eventTd.classList.add("ok");
 
+      tr.appendChild(timeTd);
       tr.appendChild(eventTd);
-
       if (isLatest) tr.classList.add("row-latest");
-
       return tr;
     }
 
     function addChild(key, value) {
       if (rows.has(key)) return;
+      const newRow = createRowElement(key, value, true);
       const prevLatest = document.querySelector(".row-latest");
       if (prevLatest) prevLatest.classList.remove("row-latest");
-      const newRow = createRowElement(key, value, true);
       logTable.appendChild(newRow);
       rows.set(key, newRow);
-      statusDiv.textContent = `Connected — last event: ${value.event || "?"}`;
-      debugDiv.textContent = `Added ${key}`;
+      statusDiv.textContent = `Connected — last event: ${cleanEventName(value.event)}`;
     }
 
-    function updateChild(key, value) {
-      if (rows.has(key)) {
-        const existing = rows.get(key);
-        const newRow = createRowElement(key, value, true);
-        existing.replaceWith(newRow);
-        rows.set(key, newRow);
-        const prevLatest = document.querySelector(".row-latest");
-        if (prevLatest) prevLatest.classList.remove("row-latest");
-        newRow.classList.add("row-latest");
-        statusDiv.textContent = `Updated event: ${value.event || "?"}`;
-      } else {
-        addChild(key, value);
-      }
-    }
-
-    // Initial one-time load
-    get(eventsRef)
-      .then(snapshot => {
-        if (!snapshot.exists()) {
-          statusDiv.textContent = "Connected — no events yet.";
-          return;
-        }
-        snapshot.forEach(childSnap => {
-          addChild(childSnap.key, childSnap.val());
-        });
-        statusDiv.textContent = `Loaded ${rows.size} event(s). Listening...`;
-      })
-      .catch(err => {
-        statusDiv.textContent = `Initial read failed: ${err.message}`;
-        console.error("Initial read error:", err);
-      });
-
-    onChildAdded(eventsRef, (snap) => {
-      const k = snap.key;
-      const v = snap.val();
-      if (rows.has(k)) {
-        updateChild(k, v);
+    get(eventsRef).then(snapshot => {
+      if (!snapshot.exists()) {
+        statusDiv.textContent = "Connected — no events yet.";
         return;
       }
-      addChild(k, v);
+      snapshot.forEach(child => addChild(child.key, child.val()));
+      statusDiv.textContent = "Listening for updates...";
     });
 
-    onChildChanged(eventsRef, (snap) => {
-      updateChild(snap.key, snap.val());
-    });
-
-    try {
-      const connectedRef = ref(db, ".info/connected");
-      onValue(connectedRef, (snap) => {
-        if (snap.exists() && snap.val() === true) {
-          debugDiv.textContent = "Realtime DB: connected";
-        } else {
-          debugDiv.textContent = "Realtime DB: disconnected";
-        }
-      });
-    } catch (e) {
-      console.warn("'.info/connected' watch failed:", e);
-    }
+    onChildAdded(eventsRef, snap => addChild(snap.key, snap.val()));
+    onChildChanged(eventsRef, snap => addChild(snap.key, snap.val()));
   </script>
 </body>
 </html>
+
 
 
 
